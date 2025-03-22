@@ -3,7 +3,7 @@
 #include <SPI.h>
 #include <soc/spi_struct.h>
 
-uint8_t chipSelectPin=12;
+uint8_t chipSelectPin=10;
 uint32_t chipSelectMask=1<<chipSelectPin;
 
 spi_t* spi;
@@ -105,6 +105,8 @@ struct channel_t {
   uint32_t sumCCountDeltaOfBatch;
   uint32_t startOfBatchTime;
   uint32_t endOfBatchTime;
+  uint32_t startOfBatchCCount;
+  uint32_t endOfBatchCCount;
   uint8_t previousBatchInError;
   uint32_t lastSampleCCount;
 };
@@ -115,7 +117,7 @@ uint16_t ringbuffer_head=0;
 #define CALIBRATED_TIMER_FREQ 79200
 uint32_t calculateBatchTimeDurationMs(channel_t *channel)
 {
-  return (channel->endOfBatchTime - channel->startOfBatchTime) / CALIBRATED_TIMER_FREQ;
+  return (channel->endOfBatchTime - channel->startOfBatchTime) / 1000;
 }
 
 
@@ -132,9 +134,13 @@ void setup(channel_t* channel, uint8_t channel_number, float_t calibratedRatio, 
   channel->authorized_additional_offset=1024;
 }
 
+#define XTHAL_GET_CCOUNT()	({ int __ccount; \
+  __asm__ __volatile__("rsr.ccount %0" : "=a"(__ccount)); \
+  __ccount; })
+
 void process(channel_t* channel) {
   static uint32_t last_ccount=0;
-  uint32_t ccount=xthal_get_ccount();
+  uint32_t ccount=XTHAL_GET_CCOUNT();
   uint32_t rel_time=channel->lastSampleCCount==0?0:ccount-channel->lastSampleCCount;
   channel->lastSampleCCount=ccount;
 
@@ -153,8 +159,10 @@ void process(channel_t* channel) {
   if (sign==channel->lastSign) {
     channel->sameSignNumSamples++;
   } else {
-    uint32_t tmr=timer_u32();
+    uint32_t tmr=micros();
     if (channel->sameSignNumSamples>5 && channel->status==STATUS_LOOKING_FOR_ZERO) {
+      //Serial.printf("%d Channel=%d Start sampling\n", tmr, channel->channel);
+      //Serial.flush();
       channel->status=STATUS_SAMPLING;
       channel->startIndex=ringbuffer_head;
       channel->numSamples=0;
@@ -162,14 +170,17 @@ void process(channel_t* channel) {
       channel->sumSquaresSamples=0;
       channel->numHalfPeriod=0;
       channel->startOfBatchTime=tmr;
+      channel->startOfBatchCCount=ccount;
     }
     channel->sameSignNumSamples=1;
     channel->lastSign=sign;
     channel->numHalfPeriod++;
-    uint32_t batchDuration=(tmr - channel->startOfBatchTime) / CALIBRATED_TIMER_FREQ;
+    uint32_t batchDuration=(tmr - channel->startOfBatchTime) / 1000;
     if (channel->numHalfPeriod==HALF_PERIOD_BY_BATCH) {
+      //Serial.printf("Batch duration : %d\n", batchDuration);
       channel->endOfBatchTime=tmr;
-      if (batchDuration>990 && batchDuration<1010) {
+      channel->endOfBatchCCount=ccount;
+      if (batchDuration>980 && batchDuration<1010) {
         channel->status=STATUS_DONE;
       } else {
         channel->status=STATUS_DONE_WITH_ERROR;
@@ -187,26 +198,35 @@ void process(channel_t* channel) {
 }
 
 uint16_t capture(channel_t* channel, channel_t* previous_channel) {
-  REG_WRITE(GPIO_OUT_W1TC_REG, chipSelectMask);
-  spi->dev->mosi_dlen.usr_mosi_bit_len = 31;
-  spi->dev->miso_dlen.usr_miso_bit_len = 31;
-  spi->dev->data_buf[0]=channel->adc_precalculated_input;
-  spi->dev->cmd.usr = 1;
 
+  digitalWrite(chipSelectPin, LOW);
+
+  spi->dev->ms_dlen.ms_data_bitlen = 23;
+
+  spi->dev->data_buf[0]=channel->adc_precalculated_input;
+  spi->dev->cmd.update = 1;
+  int i1=0,i2=0;
+  while(spi->dev->cmd.update) i1++;
+  spi->dev->cmd.usr = 1;
   if (previous_channel) process(previous_channel);
 
-  while(spi->dev->cmd.usr);
+  while(spi->dev->cmd.usr) i2++;
 
   uint32_t val32=spi->dev->data_buf[0];
   uint8_t* val=(uint8_t*)(&val32);
   uint16_t value=(val[1]&0x0f)<<8 | val[2];
-  REG_WRITE(GPIO_OUT_W1TS_REG, chipSelectMask);
+  digitalWrite(chipSelectPin, HIGH);
   channel->value=value-ADC_APPROX_ZERO_VALUE-(channel->dynamic_offset!=0x7fff?channel->dynamic_offset:0);
+  //Serial.printf("Channel=%d Value=%d\n", channel->channel, value);
+
+  if (!previous_channel) process(channel);
+
   return value;
 }
 
 void processBatch(channel_t *channel)
 {
+  //Serial.printf("Batch done : processing %d samples (status: %d)\n", channel->numSamples, channel->status);
   if (channel->status==STATUS_DONE_WITH_ERROR) {
     if (!channel->previousBatchInError) {
       channel->previousBatchInError=1;
@@ -240,6 +260,8 @@ void processBatch(channel_t *channel)
   Serial.print(channel->sumCCountDeltaOfBatch/(channel->numSamples-1));
   Serial.print(", Time=");
   Serial.print(calculateBatchTimeDurationMs(channel));
+  Serial.print(", BatchDeltaCCount=");
+  Serial.print(channel->endOfBatchCCount-channel->startOfBatchCCount);
   Serial.println();
   if (channel->authorized_additional_offset) {
     if (channel->dynamic_offset==0x7fff)
@@ -288,6 +310,9 @@ channel_t channels[CHANNELS];
 
 float_t reference_voltage;
 
+#define BUTTON_PIN 0
+bool dumpBufferOnFull = false;
+
 void setup() {
   //Initialize serial and wait for port to open:
   pinMode(LED_BUILTIN, OUTPUT);
@@ -306,32 +331,35 @@ void setup() {
   reference_voltage=2.17f;//calibrateRefVoltage();
   float_t base_adc_ratio=reference_voltage/4096.0f;
 
-  setup(&channels[0], 0, base_adc_ratio*(865000.0f/2727.0f), VOLTAGE); // Vref=2.1059V, 4096 steps, 886kOhm/2700Ohm
+  setup(&channels[0], 0, base_adc_ratio*(855000.0f/2727.0f), VOLTAGE); // Vref=2.1059V, 4096 steps, 886kOhm/2700Ohm
   setup(&channels[1], 2, base_adc_ratio*10.0f, CURRENT); // 10A/V
-  /*setup(&channels[2], 3, base_adc_ratio*10.0f, CURRENT); // 10A/V
+  setup(&channels[2], 3, base_adc_ratio*20.0f, CURRENT); // 20A/V
   setup(&channels[3], 4, base_adc_ratio*10.0f, CURRENT); // 10A/V
   setup(&channels[4], 5, base_adc_ratio*10.0f, CURRENT); // 10A/V
   setup(&channels[5], 6, base_adc_ratio*10.0f, CURRENT); // 10A/V
-  setup(&channels[6], 7, base_adc_ratio*10.0f, CURRENT); // 10A/V*/
+  setup(&channels[6], 7, base_adc_ratio*20.0f, CURRENT); // 20A/V
 
   Serial.begin(9600);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
 }
 
 
 void loop() {
-  capture(&channels[0],&channels[1]);
-  capture(&channels[1],&channels[0]);
-  if (channels[0].status==STATUS_DONE || channels[0].status==STATUS_DONE_WITH_ERROR) { 
-    float_t reference_voltage2=calibrateRefVoltage();
-    Serial.printf("Calibrated reference voltage=%f initial=%f\n", reference_voltage2, reference_voltage);
-    processBatch(&channels[0]);
-    channels[0].status=STATUS_LOOKING_FOR_ZERO;
+  for (int i=0;i<CHANNELS;i++) {
+    capture(&channels[(i+1)%CHANNELS],&channels[i]);
   }
-  if (channels[1].status==STATUS_DONE || channels[1].status==STATUS_DONE_WITH_ERROR) {
-    processBatch(&channels[1]);
-    channels[1].status=STATUS_LOOKING_FOR_ZERO;
+  for (int i=0;i<CHANNELS;i++) {
+    if (channels[i].status==STATUS_DONE || channels[i].status==STATUS_DONE_WITH_ERROR) { 
+      processBatch(&channels[i]);
+      channels[i].status=STATUS_LOOKING_FOR_ZERO;
+    }
   }
-  if (ringbuffer_head==0) {
-//    dumpBuffer();
+  if (ringbuffer_head==0 && dumpBufferOnFull) {
+    dumpBuffer();
+    dumpBufferOnFull = false;
+  }
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    dumpBufferOnFull = true;
+    delay(500); // Debounce delay
   }
 }
