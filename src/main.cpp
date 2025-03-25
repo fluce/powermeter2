@@ -230,11 +230,8 @@ void processBatch(channel_t *channel)
   if (channel->status==STATUS_DONE_WITH_ERROR) {
     if (!channel->previousBatchInError) {
       channel->previousBatchInError=1;
-      Serial.print("Channel=");
-      Serial.print(channel->channel);
-      Serial.print(" Time=");
-      Serial.print(calculateBatchTimeDurationMs(channel));
-      Serial.println(" NoSignal");
+      Serial.printf("Channel=%d\tTime=%d\tNoSignal\r\n", channel->channel, calculateBatchTimeDurationMs(channel));
+      Serial.flush();
     }
     return;
   }
@@ -242,26 +239,16 @@ void processBatch(channel_t *channel)
   float_t calc=channel->sumSquaresSamples/(float_t)channel->numSamples;
   float_t mean=channel->sumSamples/(float_t)channel->numSamples;
   float_t Vrms=sqrt(calc-mean*mean)*channel->calibratedRatio;
-  Serial.print("Channel=");
-  Serial.print(channel->channel);
-  if (channel->kind==VOLTAGE)
-    Serial.printf(" Vrms=%f V", Vrms);
-  else
-    Serial.printf(" Irms=%f A", Vrms);
-  Serial.print(", Start index=");
-  Serial.print(channel->startIndex);
-  Serial.print(", Num Samples=");
-  Serial.print(channel->numSamples);
-  Serial.print(", Mean=");
-  Serial.print(mean);
-  Serial.print(", FirstCCountDeltaOfBatch=");
-  Serial.print(channel->firstCCountDeltaOfBatch);
-  Serial.print(", MeanCCountDelta=");
-  Serial.print(channel->sumCCountDeltaOfBatch/(channel->numSamples-1));
-  Serial.print(", Time=");
-  Serial.print(calculateBatchTimeDurationMs(channel));
-  Serial.print(", BatchDeltaCCount=");
-  Serial.print(channel->endOfBatchCCount-channel->startOfBatchCCount);
+  Serial.printf("Channel=%d\t%srms=%.3f\tUnit=%s\tSamplesCount=%d\tMean=%f\tFirstCCountDeltaOfBatch=%d\tMeanCCountDelta=%f\tTime=%d\tBatchDeltaCCount=%d", 
+    channel->channel,
+    channel->kind==VOLTAGE?"V":"I",Vrms,channel->kind==VOLTAGE?"V":"A",
+    channel->numSamples, 
+    mean, 
+    channel->firstCCountDeltaOfBatch, 
+    channel->sumCCountDeltaOfBatch/(channel->numSamples-1), 
+    calculateBatchTimeDurationMs(channel), 
+    channel->endOfBatchCCount-channel->startOfBatchCCount
+  );
   Serial.println();
   if (channel->authorized_additional_offset) {
     if (channel->dynamic_offset==0x7fff)
@@ -285,7 +272,7 @@ void dumpBuffer()
 {
   Serial.println("Buffer full");
   for(int i=0;i<BUFFER_SIZE;i++) {
-    Serial.printf("%d %d %d %d\n", i, ringbuffer[i].rel_time, ringbuffer[i].channel, ringbuffer[i].value);
+    Serial.printf("%d %d %d %d\r\n", i, ringbuffer[i].rel_time, ringbuffer[i].channel, ringbuffer[i].value);
   }
 }
 
@@ -296,12 +283,12 @@ float_t calibrateRefVoltage() {
   for (int i=0;i<16;i++) {
     uint16_t std_adc_level=capture(&channel_standard_voltage,NULL);
     usleep(20000);
-    Serial.printf("std adc level=%d\n", std_adc_level);
+    Serial.printf("std adc level=%d\r\n", std_adc_level);
     std_adc_level_sum+=std_adc_level;
   }
   std_adc_level_sum>>=4;
   float_t reference_voltage=2.0f*4096.0f/(std_adc_level_sum);
-  Serial.printf("std adc level=%d, ref voltage=%f\n", std_adc_level_sum, reference_voltage);
+  Serial.printf("std adc level=%d, ref voltage=%f\r\n", std_adc_level_sum, reference_voltage);
   return reference_voltage;
 }
 
@@ -331,7 +318,7 @@ void setup() {
   reference_voltage=2.17f;//calibrateRefVoltage();
   float_t base_adc_ratio=reference_voltage/4096.0f;
 
-  setup(&channels[0], 0, base_adc_ratio*(855000.0f/2727.0f), VOLTAGE); // Vref=2.1059V, 4096 steps, 886kOhm/2700Ohm
+  setup(&channels[0], 0, base_adc_ratio*(855000.0f/2427.0f), VOLTAGE); // Vref=2.1059V, 4096 steps, 886kOhm/2700Ohm
   setup(&channels[1], 2, base_adc_ratio*10.0f, CURRENT); // 10A/V
   setup(&channels[2], 3, base_adc_ratio*20.0f, CURRENT); // 20A/V
   setup(&channels[3], 4, base_adc_ratio*10.0f, CURRENT); // 10A/V
@@ -343,8 +330,8 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 }
 
-
 void loop() {
+  int ringbuffer_head_copy=ringbuffer_head;
   for (int i=0;i<CHANNELS;i++) {
     capture(&channels[(i+1)%CHANNELS],&channels[i]);
   }
@@ -354,7 +341,7 @@ void loop() {
       channels[i].status=STATUS_LOOKING_FOR_ZERO;
     }
   }
-  if (ringbuffer_head==0 && dumpBufferOnFull) {
+  if (ringbuffer_head<ringbuffer_head_copy && dumpBufferOnFull) {
     dumpBuffer();
     dumpBufferOnFull = false;
   }
