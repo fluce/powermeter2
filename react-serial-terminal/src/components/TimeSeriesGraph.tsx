@@ -1,10 +1,28 @@
 import React from 'react';
+import { RawChannelData } from '../types';
 
-function TimeSeriesGraph({ svgRef, logs, visibleChannels, setVisibleChannels, cursorData }) {
-  const handleCheckboxChange = (index) => {
+interface TimeSeriesGraphProps {
+  svgRef: React.RefObject<SVGSVGElement|null>;
+  logs: {
+    channelsData: Array<Array<RawChannelData>>;
+    channelTypes?: Record<number, 'Voltage' | 'Current'>;
+  };
+  visibleChannels: Record<number, boolean>;
+  setVisibleChannels: React.Dispatch<React.SetStateAction<Record<number, boolean>>>;
+  cursorData: Record<number, RawChannelData>;
+}
+
+function TimeSeriesGraph({
+  svgRef,
+  logs,
+  visibleChannels,
+  setVisibleChannels,
+  cursorData,
+}: TimeSeriesGraphProps) {
+  const handleCheckboxChange = (index: number) => {
     setVisibleChannels((prev) => ({
       ...prev,
-      [index]: !prev[index]
+      [index]: !prev[index],
     }));
   };
 
@@ -20,7 +38,6 @@ function TimeSeriesGraph({ svgRef, logs, visibleChannels, setVisibleChannels, cu
     <div>
       <svg ref={svgRef} width="800" height="400" style={{ backgroundColor: 'lightgray' }}></svg>
       <div style={{ display: 'flex', gap: '20px', marginTop: '10px' }}>
-        {/* Voltage Channels */}
         <div>
           {voltageChannels.map((index) => (
             <div key={index}>
@@ -36,8 +53,6 @@ function TimeSeriesGraph({ svgRef, logs, visibleChannels, setVisibleChannels, cu
             </div>
           ))}
         </div>
-
-        {/* Current Channels - Column 1 */}
         <div>
           {currentChannels.slice(0, 3).map((index) => (
             <div key={index}>
@@ -53,8 +68,6 @@ function TimeSeriesGraph({ svgRef, logs, visibleChannels, setVisibleChannels, cu
             </div>
           ))}
         </div>
-
-        {/* Current Channels - Column 2 */}
         <div>
           {currentChannels.slice(3, 6).map((index) => (
             <div key={index}>

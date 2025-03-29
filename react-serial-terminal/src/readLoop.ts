@@ -1,16 +1,37 @@
-async function readLoop(port, reader, setLogs, convert) {
+import { ChannelValues, LogState, RawChannelData } from './types';
+
+interface RawChannelValues {
+    Channel: number;
+    Vrms?: number;
+    Irms?: number;
+    Papp?: number;
+    Preal?: number;
+    Eact?: number;
+    Ereact?: number;
+    Unit?: string;
+    Time?: number;
+    SamplesCount?: number;
+    Mean?: number;
+}
+
+async function readLoop(
+  port: SerialPort,
+  reader: ReadableStreamDefaultReader<string>,
+  setLogs: React.Dispatch<React.SetStateAction<LogState>>,
+  convert: (buffer: string[]) => Array<Array<RawChannelData>>
+) {
   try {
     while (port.readable) {
       const { value, done } = await reader.read();
       if (done) {
         break;
       }
-      const newLine = value;
+      const newLine = value!;
       console.log(newLine);
-      setLogs((prevLogs) => {
+      setLogs((prevLogs:LogState) => {
         let isReadingBuffer = prevLogs.isReadingBuffer;
-        const addedToLogs = [];
-        const addedToBuffer = [];
+        const addedToLogs: string[] = [];
+        const addedToBuffer: string[] = [];
         let buffer = prevLogs.buffer;
         let bufferComplete = false;
         if (isReadingBuffer) {
@@ -33,16 +54,20 @@ async function readLoop(port, reader, setLogs, convert) {
         let channelTypes = prevLogs.channelTypes || {}; // Track channel types (voltage or current)
 
         if (addedToLogs.length > 0) {
-          const lineData = Object.fromEntries(
+          const lineData: RawChannelValues = Object.fromEntries(
             newLine.split("\t")
               .map(x => x.split("=", 2))
-              .map(([k, v]) => [k, isNaN(v) ? v : parseFloat(v)])
-          );
+              .map(([k, v]) => [k, isNaN(v as any) ? v : parseFloat(v)])
+          ) as unknown as RawChannelValues;
           if (lineData.Channel !== undefined) {
             channelsValues[lineData.Channel] = {
               channel: lineData.Channel,
               Vrms: lineData.Vrms,
               Irms: lineData.Irms,
+              Papp: lineData.Papp,
+              Preal: lineData.Preal,
+              Eact: lineData.Eact,
+              Ereact: lineData.Ereact,
               unit: lineData.Unit,
               time: lineData.Time,
               samplesCount: lineData.SamplesCount,
@@ -57,7 +82,7 @@ async function readLoop(port, reader, setLogs, convert) {
           }
         }
 
-        const res = {
+        const res: LogState = {
           logs: [...prevLogs.logs, ...addedToLogs].slice(-101),
           buffer: bufferComplete ? [] : [...buffer, ...addedToBuffer],
           isReadingBuffer,
