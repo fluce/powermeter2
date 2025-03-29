@@ -37,15 +37,23 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
 }
 
+TaskHandle_t Task1;
+
+void task1code(void *parameter) {
+  while (true) {
+
+  }
+}
+
 void loop() {
   int ringbuffer_head_copy = ringbuffer_head;
   for (int i = 0; i < CHANNELS; i++) {
     capture(&channels[(i + 1) % CHANNELS], &channels[i]);
   }
-  if (channels[0].status == STATUS_DONE || channels[0].status == STATUS_DONE_WITH_ERROR) {
+  if (channels[0].batch.status == STATUS_DONE || channels[0].batch.status == STATUS_DONE_WITH_ERROR) {
     for (int i = 0; i < CHANNELS; i++) {
-      processBatch(&channels[i]);
-      channels[i].status = STATUS_LOOKING_FOR_ZERO;
+      processBatch(&channels[i].info,&channels[i].batch,&channels[i].index,&channels[i].global);
+      channels[i].batch.status = STATUS_LOOKING_FOR_ZERO;
     }
   }
   if (ringbuffer_head < ringbuffer_head_copy && dumpBufferOnFull) {
