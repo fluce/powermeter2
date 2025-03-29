@@ -1,17 +1,21 @@
 class LineBreakTransformer {
+  private container: string;
+
   constructor() {
     this.container = '';
   }
 
-  transform(chunk, controller) {
+  transform(chunk: string, controller: TransformStreamDefaultController<string>) {
     this.container += chunk;
     const lines = this.container.split('\r\n');
-    this.container = lines.pop();
+    this.container = lines.pop() || '';
     lines.forEach(line => controller.enqueue(line));
   }
 
-  flush(controller) {
-    controller.enqueue(this.container);
+  flush(controller: TransformStreamDefaultController<string>) {
+    if (this.container) {
+      controller.enqueue(this.container);
+    }
   }
 }
 
