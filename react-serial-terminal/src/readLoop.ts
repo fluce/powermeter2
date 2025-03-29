@@ -53,7 +53,7 @@ async function readLoop(
         let channelsValues = prevLogs.channelsValues;
         let channelTypes = prevLogs.channelTypes || {}; // Track channel types (voltage or current)
 
-        if (addedToLogs.length > 0) {
+        if (addedToLogs.length > 0 && !newLine.startsWith("#")) {
           const lineData: RawChannelValues = Object.fromEntries(
             newLine.split("\t")
               .map(x => x.split("=", 2))

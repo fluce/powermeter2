@@ -15,6 +15,6 @@ typedef struct {
 extern buffer_item_t ringbuffer[];
 extern uint16_t ringbuffer_head;
 
-void dumpBuffer();
+void dump_buffer();
 
 #endif

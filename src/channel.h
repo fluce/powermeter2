@@ -23,6 +23,7 @@ typedef struct channel_info_t
   channel_kind_t kind;
   float_t calibratedRatio;  
   int8_t deltaToVoltage;
+  uint32_t adc_precalculated_input;
 } channel_info_t;
 
 typedef struct channel_global_t
@@ -31,17 +32,19 @@ typedef struct channel_global_t
   float_t lastVavg;
   int16_t dynamic_offset;
   int16_t authorized_additional_offset;
+  uint8_t previousBatchInError;
 } channel_global_t;
 
-typedef struct channel_cross_batch_t
+typedef struct sample_t
 {
   int16_t value;
-} channel_cross_batch_t;
+  int8_t lastSign;
+} sample_t;
 
 typedef struct channel_batch_t
 {
+  uint8_t batchNumber;
   uint8_t status;
-  uint8_t previousBatchInError;
   uint32_t numSamples;
   int64_t sumSamples;
   uint64_t sumSquaresSamples;
@@ -54,7 +57,6 @@ typedef struct channel_batch_t
   uint32_t sumCCountDeltaOfBatch;
 
   uint16_t sameSignNumSamples;
-  int8_t lastSign;
   uint8_t numHalfPeriod;
   uint16_t startIndex;
   uint32_t lastSampleCCount;
@@ -73,11 +75,12 @@ typedef struct channel_t {
   channel_info_t info;
   channel_global_t global;
 
-  uint32_t adc_precalculated_input;
-
-  channel_cross_batch_t cross_batch;
-  channel_batch_t batch;
+  sample_t sample;
+  channel_batch_t batches[2];
   channel_index_t index;
+
+  channel_batch_t *capturing_batch;
+  channel_batch_t *processing_batch;
 } channel_t;
 
 #define CHANNELS 7
@@ -85,7 +88,6 @@ extern channel_t channels[];
 extern channel_t channel_standard_voltage;
 
 void setup(channel_t* channel, uint8_t channel_number, float_t calibratedRatio, channel_kind_t kind = VOLTAGE, int8_t delta_to_voltage = 0);
-void process(channel_info_t *info, channel_cross_batch_t *cross, channel_batch_t *channel);
-void processBatch(channel_info_t *channel, channel_batch_t *channel_batch, channel_index_t *channel_index, channel_global_t *channel_global);
+void process_sample(channel_info_t *info, sample_t *cross, channel_batch_t *channel);
 
 #endif
