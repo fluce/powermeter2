@@ -1,0 +1,207 @@
+esphome:
+  name: powermeter
+  platformio_options:
+    platform: espressif32
+    board: lolin_s3_mini
+    framework: arduino
+    platform_packages:
+      - platformio/framework-arduinoespressif32 @ ~3.20017.0
+    build_flags: -DESPHOME
+  libraries:
+    - SPI
+  includes:
+    - display_helper.h
+
+esp32:
+  board: lolin_s3_mini
+  framework:
+    type: arduino
+    version: 3.2.0
+    platform_version: 6.10.0
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  password: ""
+
+ota:
+  - platform: esphome
+    password: ""
+
+wifi:
+  ssid: "Livebox-F4B0"
+  password: "kEEbR2GT3o33DxUuEP"
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Powermeter Fallback Hotspot"
+    password: "fnxKenXp8OoC"
+
+i2c:
+  sda: 7
+  scl: 8
+  frequency: 800kHz
+
+font:
+  - file:
+      type: gfonts
+      family: Roboto
+      weight: 400
+    id: roboto
+    size: 12
+    extras:
+      - file: "gfonts://Material+Symbols+Outlined"
+        glyphs: [ "\U0000E63E", "\U0000E648" ]
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: ip
+      internal: true
+
+display:
+  - platform: ssd1306_i2c
+    model: "SH1106 128x64"
+    address: 0x3C
+    update_interval: 1s
+    lambda: |-
+      if (id(ip).has_state()) {
+        it.printf(0, 0, id(roboto), "\U0000E63E %s", id(ip).state.c_str());
+      } else {
+        it.print(0, 0, id(roboto), "\U0000E648 NOT CONNECTED");
+      }
+      it.printf(0, 12, id(roboto), "Voltage: %.2f V", id(voltage).state);
+      display_helper(it, id(roboto), id(ch1_state).state, id(ch1_power).state, "1", 0, 28);
+      display_helper(it, id(roboto), id(ch2_state).state, id(ch2_power).state, "2", 0, 47);
+      display_helper(it, id(roboto), id(ch3_state).state, id(ch3_power).state, "3", 43, 28);
+      display_helper(it, id(roboto), id(ch4_state).state, id(ch4_power).state, "4", 43, 47);
+      display_helper(it, id(roboto), id(ch5_state).state, id(ch5_power).state, "5", 86, 28);
+      display_helper(it, id(roboto), id(ch6_state).state, id(ch6_power).state, "6", 86, 47);
+
+external_components:
+  - source: 
+      type: local
+      path: ../src
+    components: 
+      - powermeter
+
+powermeter:
+  id: my_powermeter_sensor
+
+  update_interval: 60s
+
+  voltage:
+    name: "Voltage"
+    id: voltage
+
+  channel_1:
+    current: 
+      name: "CH1 Current"
+    power:
+      name: "CH1 Power"
+      id: ch1_power
+    apparent_power:
+      name: "CH1 Apparent Power"
+      id: ch1_apparent_power
+    energy:
+      name: "CH1 Energy"
+      filters:
+        - multiply: 0.001
+      unit_of_measurement: "kWh"
+    state:
+      name: "CH1 State"
+      id: ch1_state
+
+  channel_2:
+    current: 
+      name: "CH2 Current"
+    power:
+      name: "CH2 Power"
+      id: ch2_power
+    apparent_power:
+      name: "CH2 Apparent Power"
+      id: ch2_apparent_power
+    energy:
+      name: "CH2 Energy"
+      filters:
+        - multiply: 0.001
+      unit_of_measurement: "kWh"
+    state:
+      name: "CH2 State"
+      id: ch2_state
+
+  channel_3:
+    current: 
+      name: "CH3 Current"
+    power:
+      name: "CH3 Power"
+      id: ch3_power
+    apparent_power:
+      name: "CH3 Apparent Power"
+      id: ch3_apparent_power
+    energy:
+      name: "CH3 Energy"
+      filters:
+        - multiply: 0.001
+      unit_of_measurement: "kWh"
+    state:
+      name: "CH3 State"
+      id: ch3_state
+
+  channel_4:
+    current: 
+      name: "CH4 Current"
+    power:
+      name: "CH4 Power"
+      id: ch4_power
+    apparent_power:
+      name: "CH4 Apparent Power"
+      id: ch4_apparent_power
+    energy:
+      name: "CH4 Energy"
+      filters:
+        - multiply: 0.001
+      unit_of_measurement: "kWh"
+    state:
+      name: "CH4 State"
+      id: ch4_state
+
+  channel_5:
+    current: 
+      name: "CH5 Current"
+    power:
+      name: "CH5 Power"
+      id: ch5_power
+    apparent_power:
+      name: "CH5 Apparent Power"
+      id: ch5_apparent_power
+    energy:
+      name: "CH5 Energy"
+      filters:
+        - multiply: 0.001
+      unit_of_measurement: "kWh"
+    state:
+      name: "CH5 State"
+      id: ch5_state
+
+  channel_6:
+    current: 
+      name: "CH6 Current"
+    power:
+      name: "CH6 Power"
+      id: ch6_power
+    apparent_power:
+      name: "CH6 Apparent Power"
+      id: ch6_apparent_power
+    energy:
+      name: "CH6 Energy"
+      filters:
+        - multiply: 0.001
+      unit_of_measurement: "kWh"
+    state:
+      name: "CH6 State"
+      id: ch6_state
+
+captive_portal:

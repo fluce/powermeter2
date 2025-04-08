@@ -90,8 +90,8 @@ void process_sample_complete(channel_info_t *info, sample_t *sample, channel_bat
     {
       if (batch->sameSignNumSamples > 5) 
       {
-        Serial.printf("# %d Channel=%d Batch=%d Start sampling\r\n", tmr, info->channel, batch->batchNumber);
-        Serial.flush();
+        //Serial.printf("# %d Channel=%d Batch=%d Start sampling\r\n", tmr, info->channel, batch->batchNumber);
+        //Serial.flush();
         batch->status = STATUS_SAMPLING;
         batch->startIndex = ringbuffer_head;
         batch->numSamples = 0;
@@ -103,9 +103,9 @@ void process_sample_complete(channel_info_t *info, sample_t *sample, channel_bat
         batch->startOfBatchCCount = ccount;
         justStartedSampling = true;
       } else {
-        Serial.printf("# %d Channel=%d Batch=%d Waiting for starting to sample (%d)\r\n", 
+        /*Serial.printf("# %d Channel=%d Batch=%d Waiting for starting to sample (%d)\r\n", 
           tmr, info->channel, batch->batchNumber, batch->sameSignNumSamples);
-        Serial.flush();
+        Serial.flush();*/
       }
     }
     batch->numHalfPeriod++;
@@ -126,7 +126,7 @@ void process_sample_complete(channel_info_t *info, sample_t *sample, channel_bat
       }
       else
       {
-        Serial.printf("# %d Channel=%d Batch=%d\tstatus=%d (%d)\tnumHalfPeriod=%d\tduration=%d\tBatchDurationError\r\n", 
+        /*Serial.printf("# %d Channel=%d Batch=%d\tstatus=%d (%d)\tnumHalfPeriod=%d\tduration=%d\tBatchDurationError\r\n", 
             tmr,
             info->channel, 
             batch->batchNumber,
@@ -134,13 +134,13 @@ void process_sample_complete(channel_info_t *info, sample_t *sample, channel_bat
             justStartedSampling,
             batch->numHalfPeriod,
             batchDuration);
-        Serial.flush();
+        Serial.flush();*/
         batch->status = STATUS_DONE_WITH_ERROR;
       }
     }
     else if (batchDuration > 1200)
     {
-      Serial.printf("# %d Channel=%d Batch=%d\tstatus=%d (%d)\tnumHalfPeriod=%d\tduration=%d\tBatchDurationError\r\n", 
+      /*Serial.printf("# %d Channel=%d Batch=%d\tstatus=%d (%d)\tnumHalfPeriod=%d\tduration=%d\tBatchDurationError\r\n", 
         tmr,
         info->channel,
         batch->batchNumber,
@@ -148,7 +148,7 @@ void process_sample_complete(channel_info_t *info, sample_t *sample, channel_bat
         justStartedSampling,
         batch->numHalfPeriod,
         batchDuration);
-      Serial.flush();
+      Serial.flush();*/
       batch->status = STATUS_DONE_WITH_ERROR;
     }
   }
@@ -156,6 +156,7 @@ void process_sample_complete(channel_info_t *info, sample_t *sample, channel_bat
   {
     batch->numSamples++;
     batch->sumSamples += sample->value;
+    batch->sumRawSamples += sample->raw_value;
     batch->sumSquaresSamples += sample->value * sample->value;
     if (info->kind == CURRENT)
     {
@@ -191,17 +192,32 @@ void process_sample_simple(channel_info_t *info, sample_t *sample, channel_batch
     batch->numHalfPeriod = 0;
     batch->startOfBatchTime = tmr;
     batch->startOfBatchCCount = ccount;
+    if (info->channel==2) {
+      ESP_LOGI(TAG, "Channel=%d Batch=%d Start sampling\r\n", info->channel, batch->batchNumber);
+      log_item_index = 0;
+    }
   }
   if (batch->status == STATUS_SAMPLING)
   {
     batch->numSamples++;
     batch->sumSamples += sample->value;
+    batch->sumRawSamples += sample->raw_value;
     batch->sumSquaresSamples += sample->value * sample->value;
     if (info->kind == CURRENT)
     {
       int16_t current = sample->value;
       int16_t voltage = ringbuffer[(ringbuffer_head + info->deltaToVoltage) & BUFFER_SIZE_MASK].value;
-      batch->sumUISamples += current * voltage;      
+      batch->sumUISamples += (int64_t)current * (int64_t)voltage;
+      if (info->channel==2 && info->batch_counter==12 && log_item_index < 20) {
+        log_items[log_item_index].index = batch->numSamples;
+        log_items[log_item_index].voltage = voltage;
+        log_items[log_item_index].current = current;
+        int64_t sumUI = batch->sumUISamples;
+        int64_t numSamples = batch->numSamples;
+        log_items[log_item_index].sumUI = sumUI;
+        log_items[log_item_index].avgUI = sumUI / numSamples;
+        log_item_index++;
+      }
     }
   }
   ringbuffer_head = (ringbuffer_head + 1) & BUFFER_SIZE_MASK;
@@ -219,3 +235,9 @@ void process_sample(channel_info_t *info, sample_t *sample, channel_batch_t *bat
   }
 }
 
+void end_of_batch(channel_batch_t* batch)
+{
+  batch->status = STATUS_DONE;
+  batch->endOfBatchTime = micros();
+  batch->endOfBatchCCount = XTHAL_GET_CCOUNT();
+}

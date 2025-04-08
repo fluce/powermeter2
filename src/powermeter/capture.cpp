@@ -22,6 +22,7 @@ uint16_t capture(channel_t* channel, channel_t* previous_channel) {
   uint8_t* val=(uint8_t*)(&val32);
   uint16_t value=(val[1]&0x0f)<<8 | val[2];
   digitalWrite(chipSelectPin, HIGH);
+  channel->sample.raw_value=value;
   channel->sample.value=value-ADC_APPROX_ZERO_VALUE-(channel->global.dynamic_offset!=0x7fff?channel->global.dynamic_offset:0);
   //Serial.printf("Channel=%d Value=%d\n", channel->channel, value);
 
